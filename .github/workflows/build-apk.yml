@@ -1,0 +1,85 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK Platform 34 & Build Tools
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+
+      - name: Compile Rust Shared Library with cargo-ndk
+        run: |
+          CARGO_PATH=$(find . -maxdepth 3 -name "Cargo.toml" | head -n 1)
+          if [ -z "$CARGO_PATH" ]; then
+            echo "ERROR: Cargo.toml not found!"
+            ls -la
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$CARGO_PATH")
+          cd "$PROJECT_DIR"
+
+          cargo ndk -P 24 -t aarch64-linux-android -t armv7-linux-androideabi -o ./android/app/src/main/jniLibs build --release
+
+          # Copy libc++_shared.so if present (needed by rodio/cpal/oboe C++ audio runtime)
+          NDK_ROOT="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+          if [ -n "$NDK_ROOT" ]; then
+            LIBCPP_ARM64=$(find "$NDK_ROOT" -path "*/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" | head -n 1)
+            LIBCPP_ARMV7=$(find "$NDK_ROOT" -path "*/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so" | head -n 1)
+            [ -n "$LIBCPP_ARM64" ] && cp "$LIBCPP_ARM64" ./android/app/src/main/jniLibs/arm64-v8a/ || true
+            [ -n "$LIBCPP_ARMV7" ] && cp "$LIBCPP_ARMV7" ./android/app/src/main/jniLibs/armeabi-v7a/ || true
+          fi
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build APK with Gradle
+        run: |
+          CARGO_PATH=$(find . -maxdepth 3 -name "Cargo.toml" | head -n 1)
+          PROJECT_DIR=$(dirname "$CARGO_PATH")
+          cd "$PROJECT_DIR/android"
+          gradle assembleRelease --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-mobile-music-player-apk
+          path: |
+            **/build/outputs/apk/release/*.apk
+            **/build/outputs/apk/debug/*.apk
