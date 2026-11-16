@@ -1,0 +1,62 @@
+[package]
+name = "rust_mobile_music_player"
+version = "1.1.0"
+edition = "2021"
+authors = ["Your Name <you@example.com>"]
+description = "Cross-platform mobile & desktop music player built in Rust with egui/eframe, rodio, lofty, and 5-band EQ."
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "rust_mobile_music_player"
+# "cdylib" is required by the Android NDK to produce a shared object (.so)
+# "rlib" allows native desktop development and testing
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# GUI Framework: egui + eframe
+eframe = { version = "0.30", default-features = false, features = [
+    "default_fonts",
+    "glow",              # OpenGL ES 2.0/3.0 backend for Android/iOS
+    "persistence",
+] }
+
+# Audio Playback Engine: rodio with symphonia decoders (MP3, WAV, FLAC, OGG, AAC)
+rodio = { version = "0.20", features = ["symphonia-all"] }
+
+# Audio Metadata: lofty for ID3 tags, artist, album, duration, and embedded cover art
+lofty = "0.21"
+
+# Desktop-only Native File Dialogs (not compiled on Android)
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = "0.15"
+
+# Lock-free concurrency channels between UI and background Audio thread
+crossbeam-channel = "0.5"
+
+# Directory traversal for scanning music folders
+walkdir = "2.5"
+
+# Image decoding for rendering cover art textures in egui
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+# Shuffle and playlist randomization
+rand = "0.8"
+
+# Android-specific dependencies (only compiled when targeting Android)
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { version = "0.30", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "persistence",
+    "android-native-activity",
+] }
+android-activity = { version = "0.6", features = ["native-activity"] }
+android_logger = "0.14"
+log = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1
+panic = "abort"
